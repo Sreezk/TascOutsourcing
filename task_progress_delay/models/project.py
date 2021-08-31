@@ -299,11 +299,11 @@ class ProjectTask(models.Model):
         if vals.get('stage_id', False):
             total_time = 0
             if len(self.timesheet_ids) == 0:
-                # raise Warning(_('"Please Fill the task cost or Government fee"'))
+                raise Warning(_('"Please Fill the task cost or Government fee"'))
                 print('removeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed as its not working')
             for j in self.timesheet_ids:
-                if j.cost_stage + j.gov_fee == 0:
-                    # raise Warning(_('"Please Fill the task cost or Government fee"'))
+                if j.cost_stage + j.gov_fee < 0:
+                    raise Warning(_('"Please Fill the task cost or Government fee"'))
                     print('removeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed as its not working')
 
                 if not j.cost_stage:
