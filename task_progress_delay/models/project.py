@@ -126,11 +126,17 @@ class ProjectTask(models.Model):
     planned_date_begin = fields.Datetime("Start date")
     planned_date_end = fields.Datetime("End date", store=True)
     stage_lead_time = fields.Float(related='stage_id.lead_time', string='Stage Turnaround Time')
+    check_closing_stage = fields.Boolean('Check Closing Stage', default=False, compute='compute_closing_stage')
 
     # @api.onchange('planned_date_end')
     # def _change_deadline(self):
     # 	for i in self:
     # 		i.date_deadline = i.planned_date_end
+
+    def compute_closing_stage(self):
+        for rec in self:
+            if rec.stage_id:
+                rec.check_closing_stage = rec.stage_id.is_closed
 
     def action_create_invoice(self):
         cost_stage_fee = []
@@ -282,90 +288,126 @@ class ProjectTask(models.Model):
     #                 prev_alloc =d
     #                 rec.task_progress = rec.task_progress + prev_stage.allocation
     #     return True
-
-    @api.onchange('stage_id')
-    @api.depends('stage_id','task_stage','project_id')
+    
     def calculate_progress(self):
-        # self.task_progress = 0
-        total = 0
+        taskk_time = []
         duration = []
         timesheet_id = []
-        for self in self:
-            total_duration = 0
+        sstages_id = []
+        check_timsesheet_id = []
+
+        for selfs in self:
             for rec in self.timesheet_ids:
-                print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.stage_id.id)
-                print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.task_stage)
-                print('rec.stage_name.name', rec.stage_name.name)
-                print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.task_progress)
-                timesheet_id.append(rec.stage_name.id)
-                print('timesheeeeeeeeeeeeeeeeeeeetlissssssssssst',timesheet_id)
-                stage_id = self.env['project.task.type'].search([('name', '=', self.task_stage),
-                                                                 ('project_ids', '=', self.project_id.name)])
-                if rec.stage_name.name == self.task_stage:
-                    print('rec.check_entered',rec.check_entered)
-                    if rec.check_entered != True:
-                        print('reccccccccccccccccccccccccccccccccccc', rec.unit_amount)
-                        # total_duration += rec.unit_amount
-                        duration.append(rec.unit_amount)
-                        print('duraaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', duration)
+                if rec.unit_amount > 0:
+                    timesheet_id.append(self.stage_id.id)
+                    duration.append(rec.unit_amount)
+                    check_timsesheet_id.append(rec.stage_name.id)
+            for rec in selfs.timesheet_ids:
+                stage_ids = self.env['project.task.type'].search([('id', 'in', check_timsesheet_id)])
+                for ss in stage_ids:
+                for stage_id in stage_ids:
+                    if rec.stage_name.name == self.task_stage:
                         total = sum(duration)
-                        print('ttttttttttttttttttttttttttttttttttttttttttttttt', total)
                         if stage_id:
-                            print('stageleadtimeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', stage_id.lead_time)
-                            if stage_id.lead_time != 0:
+                            if stage_id.lead_time:
                                 company_id = self.env.company.id
                                 resource = self.env['resource.calendar'].search(
                                     [('company_id', '=', company_id), ('company_calendar', '=', True)])
                                 if resource:
                                     total_lead = stage_id.lead_time * resource.hours_per_day
-                                    print('totalleaddddddddddddddddddddddddddddddd', total_lead)
-                                    if total >= total_lead:
-                                        self.task_progress += stage_id.allocation
-                                        rec.check_entered = True
+                                    if total <= total_lead:
+                                        task_progresses = total / total_lead
+                                        task_progress = (task_progresses * stage_id.allocation)
                                     else:
-                                        task_progress = total / total_lead
-                                        self.task_progress += task_progress * stage_id.allocation
-                                        rec.check_entered = True
-                                        print('elssssssssssssssssssssssssssssse', self.task_progress)
-        # return True
-        for self in self:
-            total_duration = 0
-            for rec in self.timesheet_ids:
-                print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.task_stage)
-                stage_id = self.env['project.task.type'].search(
-                    [('name', '=', self.task_stage), ('project_ids', '=', self.project_id.name)])
-                if rec.stage_name.name == self.task_stage:
-                    print('reccccccccccccccccccccccccccccccccccc', rec.unit_amount)
-                    # total_duration += rec.unit_amount
-                    duration.append(rec.unit_amount)
-                    print('duraaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', duration)
-                    total = sum(duration)
-                    print('ttttttttttttttttttttttttttttttttttttttttttttttt', total)
-                    if stage_id:
-                        print('stageleadtimeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', stage_id.lead_time)
-                        if stage_id.lead_time != 0:
-                            company_id = self.env.company.id
-                            resource = self.env['resource.calendar'].search(
-                                [('company_id', '=', company_id), ('company_calendar', '=', True)])
-                            if resource:
-                                total_lead = stage_id.lead_time * resource.hours_per_day
-                                print('totalleaddddddddddddddddddddddddddddddd', total_lead)
-                                if total >= total_lead:
-                                    self.task_progress = stage_id.allocation
-                                else:
-                                    task_progress = total / total_lead
-                                    self.task_progress = task_progress * stage_id.allocation
-                                    print('elssssssssssssssssssssssssssssse', self.task_progress)
-                # else:
-                #     Progress = (Sum(Duration in Days stage) / Turnaroundtimestage)*allocation % age
+                                        task_progress = stage_id.allocation
+                                    taskk_time.append(task_progress)
+                                    sstages_id.append(stage_id.name)
+
+        for selfs in self:
+            selfs.task_progress = sum(taskk_time)
         return True
+
+#     @api.onchange('stage_id')
+#     @api.depends('stage_id','task_stage','project_id')
+#     def calculate_progress(self):
+#         # self.task_progress = 0
+#         total = 0
+#         duration = []
+#         timesheet_id = []
+#         for self in self:
+#             total_duration = 0
+#             for rec in self.timesheet_ids:
+#                 print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.stage_id.id)
+#                 print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.task_stage)
+#                 print('rec.stage_name.name', rec.stage_name.name)
+#                 print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.task_progress)
+#                 timesheet_id.append(rec.stage_name.id)
+#                 print('timesheeeeeeeeeeeeeeeeeeeetlissssssssssst',timesheet_id)
+#                 stage_id = self.env['project.task.type'].search([('name', '=', self.task_stage),
+#                                                                  ('project_ids', '=', self.project_id.name)])
+#                 if rec.stage_name.name == self.task_stage:
+#                     print('rec.check_entered',rec.check_entered)
+#                     if rec.check_entered != True:
+#                         print('reccccccccccccccccccccccccccccccccccc', rec.unit_amount)
+#                         # total_duration += rec.unit_amount
+#                         duration.append(rec.unit_amount)
+#                         print('duraaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', duration)
+#                         total = sum(duration)
+#                         print('ttttttttttttttttttttttttttttttttttttttttttttttt', total)
+#                         if stage_id:
+#                             print('stageleadtimeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', stage_id.lead_time)
+#                             if stage_id.lead_time != 0:
+#                                 company_id = self.env.company.id
+#                                 resource = self.env['resource.calendar'].search(
+#                                     [('company_id', '=', company_id), ('company_calendar', '=', True)])
+#                                 if resource:
+#                                     total_lead = stage_id.lead_time * resource.hours_per_day
+#                                     print('totalleaddddddddddddddddddddddddddddddd', total_lead)
+#                                     if total >= total_lead:
+#                                         self.task_progress += stage_id.allocation
+#                                         rec.check_entered = True
+#                                     else:
+#                                         task_progress = total / total_lead
+#                                         self.task_progress += task_progress * stage_id.allocation
+#                                         rec.check_entered = True
+#                                         print('elssssssssssssssssssssssssssssse', self.task_progress)
+#         # return True
+#         for self in self:
+#             total_duration = 0
+#             for rec in self.timesheet_ids:
+#                 print('kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', self.task_stage)
+#                 stage_id = self.env['project.task.type'].search(
+#                     [('name', '=', self.task_stage), ('project_ids', '=', self.project_id.name)])
+#                 if rec.stage_name.name == self.task_stage:
+#                     print('reccccccccccccccccccccccccccccccccccc', rec.unit_amount)
+#                     # total_duration += rec.unit_amount
+#                     duration.append(rec.unit_amount)
+#                     print('duraaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', duration)
+#                     total = sum(duration)
+#                     print('ttttttttttttttttttttttttttttttttttttttttttttttt', total)
+#                     if stage_id:
+#                         print('stageleadtimeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', stage_id.lead_time)
+#                         if stage_id.lead_time != 0:
+#                             company_id = self.env.company.id
+#                             resource = self.env['resource.calendar'].search(
+#                                 [('company_id', '=', company_id), ('company_calendar', '=', True)])
+#                             if resource:
+#                                 total_lead = stage_id.lead_time * resource.hours_per_day
+#                                 print('totalleaddddddddddddddddddddddddddddddd', total_lead)
+#                                 if total >= total_lead:
+#                                     self.task_progress = stage_id.allocation
+#                                 else:
+#                                     task_progress = total / total_lead
+#                                     self.task_progress = task_progress * stage_id.allocation
+#                                     print('elssssssssssssssssssssssssssssse', self.task_progress)
+#                 # else:
+#                 #     Progress = (Sum(Duration in Days stage) / Turnaroundtimestage)*allocation % age
+#         return True
 
     def write(self, vals):
         if vals.get('stage_id', False):
             total_time = 0
             if len(self.timesheet_ids) == 0:
-                # raise Warning(_('"Please Fill the task cost or Government fee"'))
-                print('nedd')
                 raise Warning(_('"Please Fill the task cost or Government fee"'))
             stage_ids = []
             for stage_id in self.timesheet_ids:
@@ -373,15 +415,9 @@ class ProjectTask(models.Model):
             for j in self.timesheet_ids:
                 stage_ids.append(j.stage_name.id)
                 if self.stage_id.id not in stage_ids:
-                    # raise Warning(_('"Please Fill the task cost or Government fee"'))
-                    print('nedd')
-
+                    raise Warning(_('Please ensure that you have entered all relevant costs before moving to the next activity/step'))
                 if j.cost_stage + j.gov_fee == 0:
-                    # raise Warning(_('"Please Fill the task cost or Government fee"'))
-                    print('nedd')
-                    raise Warning(_('"Please Fill the task cost or Government fee"'))
-                if j.cost_stage + j.gov_fee == 0:
-                    raise Warning(_('"Please Fill the task cost or Government fee"'))
+                    raise Warning(_('Please ensure that you have entered all relevant costs before moving to the next activity/step'))
                 if self.stage_id.name == j.stage_name.name:
                     total_time += j.unit_amount
                 history_vals = {
